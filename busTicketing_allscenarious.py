@@ -10,18 +10,19 @@ app = FastAPI(title="Bus Ticket Booking Workflow")
 # -------------------------------
 # Allowed / Mock Data
 # -------------------------------
-ALLOWED_PHONE_NUMBERS = {"7358174456", "7358174457"}
+ALLOWED_PHONE_NUMBERS = {"7358174456", "7358174457", "9824924348"}
 ALLOWED_CUSTOMERS = {
     "7358174456": {"name": "John Doe", "email": "john@example.com"},
     "7358174457": {"name": "Jane Smith", "email": "jane@example.com"}
 }
 ROUTES = {
     "Bangalore-Chennai": [
-        {"bus_id": "B1001", "start_time": "09:00 AM", "available_seats": list(range(1, 11))},
-        {"bus_id": "B1002", "start_time": "02:00 PM", "available_seats": list(range(1, 6))}
+        {"bus_id": "CB1001", "start_time": "09:00 AM", "available_seats": list(range(1, 11))},
+        {"bus_id": "CB1002", "start_time": "02:00 PM", "available_seats": list(range(1, 6))}
     ],
     "Chennai-Hyderabad": [
-        {"bus_id": "B2001", "start_time": "08:30 AM", "available_seats": list(range(1, 8))}
+        {"bus_id": "CH2001", "start_time": "08:30 AM", "available_seats": list(range(1, 8))},
+        {"bus_id": "CH2002", "start_time": "09:30 AM", "available_seats": list(range(1, 8))}
     ]
 }
 
@@ -65,7 +66,7 @@ class Payment(BaseModel):
 # -------------------------------
 @app.get("/welcome/")
 def welcome():
-    return {"message": "Welcome to XYZ Bus Booking Service! Let's start your booking."}
+    return {"message": "Welcome to Smartbots Bus Booking Service! Let's start your booking."}
 
 # -------------------------------
 # Step 1: Validate Phone Number (with retry limit)
