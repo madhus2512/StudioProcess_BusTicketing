@@ -1,214 +1,161 @@
 from fastapi import FastAPI, HTTPException, status
-from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, Field, constr, conint
+from pydantic import BaseModel
+from typing import List
 import random
+from datetime import datetime, timedelta
 
 # -------------------------------
 # Initialize FastAPI
 # -------------------------------
-app = FastAPI(title="Bus Ticket Booking Workflow")
-
-# Allow all origins (optional, helps testing in Postman/frontend)
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+app = FastAPI(title="Bus Ticket Booking API")
 
 # -------------------------------
-# Allowed / Mock Data
+# Mock Data
 # -------------------------------
-ALLOWED_PHONE_NUMBERS = {"7358174456", "7358174457"}
-ALLOWED_CUSTOMERS = {
-    "7358174456": {"name": "John Doe", "email": "john@example.com"},
-    "7358174457": {"name": "Jane Smith", "email": "jane@example.com"}
-}
-ROUTES = {
-    "Bangalore-Chennai": [
-        {"bus_id": "CB1001", "start_time": "09:00 AM", "available_seats": list(range(1, 11))},
-        {"bus_id": "CB1002", "start_time": "02:00 PM", "available_seats": list(range(1, 6))}
-    ],
-    "Chennai-Hyderabad": [
-        {"bus_id": "CH2001", "start_time": "08:30 AM", "available_seats": list(range(1, 8))},
-        {"bus_id": "CH2002", "start_time": "09:30 AM", "available_seats": list(range(1, 8))}
-    ]
-}
+AVAILABLE_BUSES = [
+    {"bus_id": "B1001", "source": "Bangalore", "destination": "Chennai", "start_time": "08:00", "total_seats": 5},
+    {"bus_id": "B1002", "source": "Bangalore", "destination": "Hyderabad", "start_time": "09:30", "total_seats": 5},
+    {"bus_id": "B1003", "source": "Chennai", "destination": "Coimbatore", "start_time": "07:15", "total_seats": 5},
+]
 
-# -------------------------------
-# State Management (in-memory sessions)
-# -------------------------------
-SESSIONS = {}
+BOOKINGS = {}   # booking_id → booking details
+PASSENGERS = {} # booking_id → passenger details
+SEATS = {}      # (bus_id, seat_number) → booking_id
 
 # -------------------------------
 # Pydantic Models
 # -------------------------------
-class PhoneNumber(BaseModel):
-    phone_number: constr(strip_whitespace=True, min_length=10, max_length=10)
-
-class RouteSearch(BaseModel):
-    phone_number: constr(strip_whitespace=True, min_length=10, max_length=10)
+class SearchBus(BaseModel):
     source: str
     destination: str
 
-class SeatSelection(BaseModel):
-    phone_number: constr(strip_whitespace=True, min_length=10, max_length=10)
+class SelectBus(BaseModel):
+    booking_id: str
     bus_id: str
-    seat_number: conint(gt=0)
+
+class SelectSeat(BaseModel):
+    booking_id: str
+    seat_number: int
 
 class PassengerDetails(BaseModel):
-    phone_number: constr(strip_whitespace=True, min_length=10, max_length=10)
+    booking_id: str
     name: str
-    age: conint(gt=0)
+    age: int
     gender: str
-    email: str
 
 class Payment(BaseModel):
-    phone_number: constr(strip_whitespace=True, min_length=10, max_length=10)
-    card_number: constr(min_length=16, max_length=16)
-    expiry_date: str
-    cvv: constr(min_length=3, max_length=3)
-    amount: float = Field(gt=0)
-
-class CustomerRegistration(BaseModel):
-    phone_number: constr(strip_whitespace=True, min_length=10, max_length=10)
-    name: str
-    email: str
+    booking_id: str
+    amount: float
 
 # -------------------------------
-# Welcome Message
+# 1. Welcome Endpoint
 # -------------------------------
 @app.get("/welcome/")
 def welcome():
-    return {"message": "Welcome to Smartbots Bus Booking Service! Let's start your booking."}
+    return {"message": "Welcome to Bus Ticket Booking Service!"}
 
 # -------------------------------
-# Step 1: Validate Phone Number
+# 2. Search Buses
 # -------------------------------
-@app.post("/validate-phone/")
-def validate_phone_number(phone: PhoneNumber):
-    session = SESSIONS.setdefault(phone.phone_number, {"attempts": 0, "validated": False})
-
-    if phone.phone_number in ALLOWED_PHONE_NUMBERS:
-        session["validated"] = True
-        session["attempts"] = 0
-        return {
-            "message": "Phone number is valid.",
-            "customer": ALLOWED_CUSTOMERS.get(phone.phone_number, {})
-        }
-    else:
-        session["attempts"] += 1
-        if session["attempts"] >= 2:
-            return {"message": "Phone number invalid. Booking process failed!"}
-        return {"message": "Invalid phone number. Please try again."}
-
-# -------------------------------
-# Step 1.1: Validate Customer Name
-# -------------------------------
-@app.post("/validate-customer/")
-def validate_customer(phone: PhoneNumber, name: str):
-    session = SESSIONS.get(phone.phone_number)
-    if not session or not session.get("validated"):
-        raise HTTPException(status_code=403, detail="Phone number not validated.")
-
-    customer = ALLOWED_CUSTOMERS.get(phone.phone_number)
-    if customer and customer["name"].lower() == name.lower():
-        return {"message": "Customer validated successfully.", "customer": customer}
-    else:
-        return {
-            "message": "Customer not found. Please register with name, email, and phone number."
-        }
-
-# -------------------------------
-# Step 1.2: Register New Customer
-# -------------------------------
-@app.post("/register-customer/")
-def register_customer(customer: CustomerRegistration):
-    if customer.phone_number in ALLOWED_CUSTOMERS:
-        return {"message": "Customer already exists."}
-
-    # Save into allowed customers
-    ALLOWED_CUSTOMERS[customer.phone_number] = {
-        "name": customer.name,
-        "email": customer.email
-    }
-    # auto-mark validated
-    SESSIONS[customer.phone_number] = {"validated": True}
-    return {
-        "message": "Customer registered successfully.",
-        "customer": ALLOWED_CUSTOMERS[customer.phone_number]
-    }
-
-# -------------------------------
-# Step 2: Search Buses
-# -------------------------------
-@app.post("/search-buses/")
-def search_buses(route: RouteSearch):
-    session = SESSIONS.get(route.phone_number)
-    if not session or not session.get("validated"):
-        raise HTTPException(status_code=403, detail="Phone number not validated.")
-
-    key = f"{route.source}-{route.destination}"
-    if key not in ROUTES:
+@app.post("/search-bus/")
+def search_bus(search: SearchBus):
+    buses = [bus for bus in AVAILABLE_BUSES if bus["source"] == search.source and bus["destination"] == search.destination]
+    if not buses:
         return {"message": "No buses found for this route. Please try again."}
-    return {"available_buses": ROUTES[key]}
+
+    # create temporary booking id
+    booking_id = f"BK{random.randint(1000,9999)}"
+    BOOKINGS[booking_id] = {"status": "Bus Search Done", "bus": None, "seat": None}
+
+    return {"booking_id": booking_id, "available_buses": buses}
 
 # -------------------------------
-# Step 3: Select Seat
+# 3. Choose Bus
+# -------------------------------
+@app.post("/choose-bus/")
+def choose_bus(selection: SelectBus):
+    if selection.booking_id not in BOOKINGS:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Booking ID not found.")
+    bus = next((bus for bus in AVAILABLE_BUSES if bus["bus_id"] == selection.bus_id), None)
+    if not bus:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Bus not found.")
+    BOOKINGS[selection.booking_id]["bus"] = bus
+    BOOKINGS[selection.booking_id]["status"] = "Bus Selected"
+    return {"message": "Bus selected successfully.", "booking_id": selection.booking_id, "bus": bus}
+
+# -------------------------------
+# 4. Select Seat
 # -------------------------------
 @app.post("/select-seat/")
-def select_seat(selection: SeatSelection):
-    session = SESSIONS.get(selection.phone_number)
-    if not session or not session.get("validated"):
-        raise HTTPException(status_code=403, detail="Phone number not validated.")
+def select_seat(selection: SelectSeat):
+    if selection.booking_id not in BOOKINGS:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Booking ID not found.")
+    bus = BOOKINGS[selection.booking_id]["bus"]
+    if not bus:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Bus not yet chosen.")
+    if selection.seat_number < 1 or selection.seat_number > bus["total_seats"]:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid seat number.")
+    if SEATS.get((bus["bus_id"], selection.seat_number)):
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Seat already booked.")
 
-    for route_buses in ROUTES.values():
-        for bus in route_buses:
-            if bus["bus_id"] == selection.bus_id:
-                if selection.seat_number in bus["available_seats"]:
-                    bus["available_seats"].remove(selection.seat_number)
-                    session["seat"] = selection.seat_number
-                    session["bus_id"] = selection.bus_id
-                    return {
-                        "message": "Seat booked temporarily.",
-                        "bus_id": selection.bus_id,
-                        "seat_number": selection.seat_number
-                    }
-                else:
-                    return {"message": "Seat not available. Please select another seat."}
-    return {"message": "Bus not found."}
+    SEATS[(bus["bus_id"], selection.seat_number)] = selection.booking_id
+    BOOKINGS[selection.booking_id]["seat"] = selection.seat_number
+    BOOKINGS[selection.booking_id]["status"] = "Seat Selected"
+
+    return {"message": "Seat selected successfully.", "booking_id": selection.booking_id, "seat_number": selection.seat_number}
 
 # -------------------------------
-# Step 4: Enter Passenger Details
+# 5. Enter Passenger Details
 # -------------------------------
 @app.post("/enter-passenger/")
 def enter_passenger(details: PassengerDetails):
-    session = SESSIONS.get(details.phone_number)
-    if not session or not session.get("validated"):
-        raise HTTPException(status_code=403, detail="Phone number not validated.")
-
-    session["passenger"] = details.dict()
-    return {
-        "message": "Passenger details recorded.",
-        "passenger": details.dict()
+    if details.booking_id not in BOOKINGS:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Booking ID not found.")
+    PASSENGERS[details.booking_id] = {
+        "name": details.name,
+        "age": details.age,
+        "gender": details.gender
     }
+    BOOKINGS[details.booking_id]["status"] = "Passenger Added"
+    return {"message": "Passenger details saved successfully.", "booking_id": details.booking_id}
 
 # -------------------------------
-# Step 5: Make Payment
+# 6. Make Payment
 # -------------------------------
 @app.post("/make-payment/")
 def make_payment(payment: Payment):
-    session = SESSIONS.get(payment.phone_number)
-    if not session or not session.get("validated"):
-        raise HTTPException(status_code=403, detail="Phone number not validated.")
+    if payment.booking_id not in BOOKINGS:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Booking ID not found.")
+    if payment.amount <= 0:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid payment amount.")
 
-    confirmation_number = random.randint(100000, 999999)
+    confirmation_number = f"TKT{random.randint(10000,99999)}"
+    BOOKINGS[payment.booking_id]["status"] = "Payment Done"
+    BOOKINGS[payment.booking_id]["confirmation_number"] = confirmation_number
+    BOOKINGS[payment.booking_id]["journey_date"] = (datetime.now() + timedelta(days=1)).strftime("%d-%m-%Y")
+
     return {
-        "message": "Payment successful! Your bus ticket is confirmed.",
-        "amount_paid": payment.amount,
+        "message": "Payment successful. Ticket booked!",
+        "booking_id": payment.booking_id,
         "confirmation_number": confirmation_number,
-        "ticket_status": "CONFIRMED",
-        "passenger": session.get("passenger"),
-        "bus_id": session.get("bus_id"),
-        "seat_number": session.get("seat")
+        "journey_date": BOOKINGS[payment.booking_id]["journey_date"]
     }
+
+# -------------------------------
+# 7. Check Ticket Status
+# -------------------------------
+@app.get("/check-status/{booking_id}")
+def check_status(booking_id: str):
+    if booking_id not in BOOKINGS:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Booking ID not found.")
+    return BOOKINGS[booking_id]
+
+# -------------------------------
+# 8. Cancel Ticket
+# -------------------------------
+@app.post("/cancel-ticket/{booking_id}")
+def cancel_ticket(booking_id: str):
+    if booking_id not in BOOKINGS:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Booking ID not found.")
+    BOOKINGS[booking_id]["status"] = "Cancelled"
+    return {"message": "Ticket cancelled successfully.", "booking_id": booking_id}
