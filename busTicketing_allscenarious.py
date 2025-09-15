@@ -1,6 +1,6 @@
 from fastapi import FastAPI, HTTPException, status
 from pydantic import BaseModel
-from typing import List
+from typing import List, Optional
 import random
 from datetime import datetime, timedelta
 
@@ -18,9 +18,10 @@ AVAILABLE_BUSES = [
     {"bus_id": "B1003", "source": "Chennai", "destination": "Coimbatore", "start_time": "07:15", "total_seats": 5},
 ]
 
-BOOKINGS = {}   # booking_id → booking details
-PASSENGERS = {} # booking_id → passenger details
-SEATS = {}      # (bus_id, seat_number) → booking_id
+SEATS = {}  # (bus_id, seat_number) -> booking_id
+TEMP_SELECTIONS = {}  # temporary storage before payment
+
+BOOKINGS = {}  # booking_id -> booking details
 
 # -------------------------------
 # Pydantic Models
@@ -29,22 +30,22 @@ class SearchBus(BaseModel):
     source: str
     destination: str
 
-class SelectBus(BaseModel):
-    booking_id: str
+class ChooseBus(BaseModel):
+    session_id: str
     bus_id: str
 
 class SelectSeat(BaseModel):
-    booking_id: str
+    session_id: str
     seat_number: int
 
 class PassengerDetails(BaseModel):
-    booking_id: str
+    session_id: str
     name: str
     age: int
     gender: str
 
 class Payment(BaseModel):
-    booking_id: str
+    session_id: str
     amount: float
 
 # -------------------------------
@@ -63,82 +64,108 @@ def search_bus(search: SearchBus):
     if not buses:
         return {"message": "No buses found for this route. Please try again."}
 
-    # create temporary booking id
-    booking_id = f"BK{random.randint(1000,9999)}"
-    BOOKINGS[booking_id] = {"status": "Bus Search Done", "bus": None, "seat": None}
+    # Create a temporary session ID for this booking process
+    session_id = f"SS{random.randint(1000,9999)}"
+    TEMP_SELECTIONS[session_id] = {"bus": None, "seat": None, "passenger": None}
 
-    return {"booking_id": booking_id, "available_buses": buses}
+    return {"session_id": session_id, "available_buses": buses}
 
 # -------------------------------
 # 3. Choose Bus
 # -------------------------------
 @app.post("/choose-bus/")
-def choose_bus(selection: SelectBus):
-    if selection.booking_id not in BOOKINGS:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Booking ID not found.")
+def choose_bus(selection: ChooseBus):
+    session = TEMP_SELECTIONS.get(selection.session_id)
+    if not session:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found.")
+
     bus = next((bus for bus in AVAILABLE_BUSES if bus["bus_id"] == selection.bus_id), None)
     if not bus:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Bus not found.")
-    BOOKINGS[selection.booking_id]["bus"] = bus
-    BOOKINGS[selection.booking_id]["status"] = "Bus Selected"
-    return {"message": "Bus selected successfully.", "booking_id": selection.booking_id, "bus": bus}
+
+    session["bus"] = bus
+    return {"message": "Bus selected successfully.", "session_id": selection.session_id, "bus": bus}
 
 # -------------------------------
 # 4. Select Seat
 # -------------------------------
 @app.post("/select-seat/")
 def select_seat(selection: SelectSeat):
-    if selection.booking_id not in BOOKINGS:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Booking ID not found.")
-    bus = BOOKINGS[selection.booking_id]["bus"]
+    session = TEMP_SELECTIONS.get(selection.session_id)
+    if not session:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found.")
+    bus = session["bus"]
     if not bus:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Bus not yet chosen.")
+
     if selection.seat_number < 1 or selection.seat_number > bus["total_seats"]:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid seat number.")
     if SEATS.get((bus["bus_id"], selection.seat_number)):
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Seat already booked.")
 
-    SEATS[(bus["bus_id"], selection.seat_number)] = selection.booking_id
-    BOOKINGS[selection.booking_id]["seat"] = selection.seat_number
-    BOOKINGS[selection.booking_id]["status"] = "Seat Selected"
-
-    return {"message": "Seat selected successfully.", "booking_id": selection.booking_id, "seat_number": selection.seat_number}
+    session["seat"] = selection.seat_number
+    return {"message": "Seat selected successfully.", "session_id": selection.session_id, "seat_number": selection.seat_number}
 
 # -------------------------------
 # 5. Enter Passenger Details
 # -------------------------------
 @app.post("/enter-passenger/")
 def enter_passenger(details: PassengerDetails):
-    if details.booking_id not in BOOKINGS:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Booking ID not found.")
-    PASSENGERS[details.booking_id] = {
+    session = TEMP_SELECTIONS.get(details.session_id)
+    if not session:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found.")
+    session["passenger"] = {
         "name": details.name,
         "age": details.age,
         "gender": details.gender
     }
-    BOOKINGS[details.booking_id]["status"] = "Passenger Added"
-    return {"message": "Passenger details saved successfully.", "booking_id": details.booking_id}
+    return {"message": "Passenger details saved successfully.", "session_id": details.session_id}
 
 # -------------------------------
-# 6. Make Payment
+# 6. Make Payment & Generate Booking ID
 # -------------------------------
 @app.post("/make-payment/")
 def make_payment(payment: Payment):
-    if payment.booking_id not in BOOKINGS:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Booking ID not found.")
+    session = TEMP_SELECTIONS.get(payment.session_id)
+    if not session:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found.")
     if payment.amount <= 0:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid payment amount.")
 
+    # Ensure bus, seat, and passenger details are filled
+    if not session.get("bus") or not session.get("seat") or not session.get("passenger"):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Incomplete booking details.")
+
+    # Mark seat as booked
+    bus_id = session["bus"]["bus_id"]
+    seat_number = session["seat"]
+    if SEATS.get((bus_id, seat_number)):
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Seat already booked.")
+
+    booking_id = f"BK{random.randint(10000,99999)}"
     confirmation_number = f"TKT{random.randint(10000,99999)}"
-    BOOKINGS[payment.booking_id]["status"] = "Payment Done"
-    BOOKINGS[payment.booking_id]["confirmation_number"] = confirmation_number
-    BOOKINGS[payment.booking_id]["journey_date"] = (datetime.now() + timedelta(days=1)).strftime("%d-%m-%Y")
+
+    # Save booking permanently
+    BOOKINGS[booking_id] = {
+        "status": "Payment Done",
+        "bus": session["bus"],
+        "seat": seat_number,
+        "passenger": session["passenger"],
+        "confirmation_number": confirmation_number,
+        "journey_date": (datetime.now() + timedelta(days=1)).strftime("%d-%m-%Y")
+    }
+
+    # Update seat mapping
+    SEATS[(bus_id, seat_number)] = booking_id
+
+    # Clear temporary session
+    TEMP_SELECTIONS.pop(payment.session_id)
 
     return {
         "message": "Payment successful. Ticket booked!",
-        "booking_id": payment.booking_id,
+        "booking_id": booking_id,
         "confirmation_number": confirmation_number,
-        "journey_date": BOOKINGS[payment.booking_id]["journey_date"]
+        "journey_date": BOOKINGS[booking_id]["journey_date"]
     }
 
 # -------------------------------
@@ -155,7 +182,14 @@ def check_status(booking_id: str):
 # -------------------------------
 @app.post("/cancel-ticket/{booking_id}")
 def cancel_ticket(booking_id: str):
-    if booking_id not in BOOKINGS:
+    booking = BOOKINGS.get(booking_id)
+    if not booking:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Booking ID not found.")
-    BOOKINGS[booking_id]["status"] = "Cancelled"
+
+    booking["status"] = "Cancelled"
+    # Free the seat
+    bus_id = booking["bus"]["bus_id"]
+    seat_number = booking["seat"]
+    SEATS.pop((bus_id, seat_number), None)
+
     return {"message": "Ticket cancelled successfully.", "booking_id": booking_id}
