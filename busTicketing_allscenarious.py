@@ -3,9 +3,9 @@ from fastapi import FastAPI, HTTPException, status
 from pydantic import BaseModel
 
 import random
- 
+
 app = FastAPI(title="Bus Ticket Booking")
- 
+
 # -------------------------------
 
 # Master Route List (10 routes)
@@ -35,7 +35,7 @@ ALL_ROUTES = [
     {"from": "Goa", "to": "Bangalore"}
 
 ]
- 
+
 # -------------------------------
 
 # Dummy Data (with routes, buses, dates, seats)
@@ -43,76 +43,127 @@ ALL_ROUTES = [
 # -------------------------------
 
 ROUTES = [
-
     {"route_id": 1, "from": "Chennai", "to": "Bangalore"},
-
     {"route_id": 2, "from": "Bangalore", "to": "Hyderabad"},
-
     {"route_id": 3, "from": "Chennai", "to": "Coimbatore"},
-
+    {"route_id": 4, "from": "Hyderabad", "to": "Vizag"},
+    {"route_id": 5, "from": "Delhi", "to": "Agra"},
+    {"route_id": 6, "from": "Mumbai", "to": "Pune"},
+    {"route_id": 7, "from": "Chennai", "to": "Madurai"},
+    {"route_id": 8, "from": "Kolkata", "to": "Bhubaneswar"},
+    {"route_id": 9, "from": "Trichy", "to": "Chennai"},
+    {"route_id": 10, "from": "Goa", "to": "Bangalore"}
 ]
- 
+
 BUS_DATA = {
-
-    1: {
-
+    1: {  # Chennai -> Bangalore
         "Chennai Express": {
-
             "2025-09-20": {"total_seats": 40, "booked_seats": [5, 8, 15]},
-
             "2025-09-21": {"total_seats": 40, "booked_seats": [10, 11]},
-
         },
-
         "Highway Rider": {
-
             "2025-09-20": {"total_seats": 40, "booked_seats": [1, 2, 3, 4]},
-
             "2025-09-21": {"total_seats": 40, "booked_seats": []},
-
         },
-
     },
-
-    2: {
-
+    2: {  # Bangalore -> Hyderabad
         "Hyd Volvo": {
-
             "2025-09-20": {"total_seats": 50, "booked_seats": [7, 9, 12]},
-
+            "2025-09-21": {"total_seats": 50, "booked_seats": [1, 2]},
         },
-
         "Night Star": {
-
             "2025-09-20": {"total_seats": 50, "booked_seats": []},
-
+            "2025-09-21": {"total_seats": 50, "booked_seats": [5]},
         },
-
     },
-
-    3: {
-
+    3: {  # Chennai -> Coimbatore
         "Coimbatore Deluxe": {
-
             "2025-09-20": {"total_seats": 45, "booked_seats": [5, 6]},
-
+            "2025-09-21": {"total_seats": 45, "booked_seats": [1]},
         },
-
         "GreenLine": {
-
             "2025-09-20": {"total_seats": 45, "booked_seats": []},
-
+            "2025-09-21": {"total_seats": 45, "booked_seats": [2, 3]},
         },
-
     },
-
+    4: {  # Hyderabad -> Vizag
+        "Vizag Express": {
+            "2025-09-20": {"total_seats": 40, "booked_seats": [1, 3]},
+            "2025-09-21": {"total_seats": 40, "booked_seats": []},
+        },
+        "Coastal Rider": {
+            "2025-09-20": {"total_seats": 40, "booked_seats": [5]},
+            "2025-09-21": {"total_seats": 40, "booked_seats": [10, 12]},
+        },
+    },
+    5: {  # Delhi -> Agra
+        "Agra Shatabdi": {
+            "2025-09-20": {"total_seats": 50, "booked_seats": [7, 9]},
+            "2025-09-21": {"total_seats": 50, "booked_seats": []},
+        },
+        "Delhi Fast": {
+            "2025-09-20": {"total_seats": 50, "booked_seats": []},
+            "2025-09-21": {"total_seats": 50, "booked_seats": [5, 8]},
+        },
+    },
+    6: {  # Mumbai -> Pune
+        "Pune Express": {
+            "2025-09-20": {"total_seats": 45, "booked_seats": [1, 2, 3]},
+            "2025-09-21": {"total_seats": 45, "booked_seats": [4, 5]},
+        },
+        "Mumbai Local": {
+            "2025-09-20": {"total_seats": 45, "booked_seats": []},
+            "2025-09-21": {"total_seats": 45, "booked_seats": [10]},
+        },
+    },
+    7: {  # Chennai -> Madurai
+        "Madurai Superfast": {
+            "2025-09-20": {"total_seats": 40, "booked_seats": [2, 5]},
+            "2025-09-21": {"total_seats": 40, "booked_seats": []},
+        },
+        "Southern Rider": {
+            "2025-09-20": {"total_seats": 40, "booked_seats": [7]},
+            "2025-09-21": {"total_seats": 40, "booked_seats": [1, 3]},
+        },
+    },
+    8: {  # Kolkata -> Bhubaneswar
+        "Coastal Express": {
+            "2025-09-20": {"total_seats": 50, "booked_seats": [4, 6]},
+            "2025-09-21": {"total_seats": 50, "booked_seats": []},
+        },
+        "Eastern Star": {
+            "2025-09-20": {"total_seats": 50, "booked_seats": []},
+            "2025-09-21": {"total_seats": 50, "booked_seats": [8, 9]},
+        },
+    },
+    9: {  # Trichy -> Chennai
+        "Trichy Express": {
+            "2025-09-20": {"total_seats": 40, "booked_seats": [1, 2]},
+            "2025-09-21": {"total_seats": 40, "booked_seats": []},
+        },
+        "Central Rider": {
+            "2025-09-20": {"total_seats": 40, "booked_seats": []},
+            "2025-09-21": {"total_seats": 40, "booked_seats": [3, 4]},
+        },
+    },
+    10: {  # Goa -> Bangalore
+        "Goa Express": {
+            "2025-09-20": {"total_seats": 50, "booked_seats": [5, 7]},
+            "2025-09-21": {"total_seats": 50, "booked_seats": []},
+        },
+        "Western Star": {
+            "2025-09-20": {"total_seats": 50, "booked_seats": []},
+            "2025-09-21": {"total_seats": 50, "booked_seats": [1, 2, 3]},
+        },
+    }
 }
- 
+
+
 # Temporary store for booked tickets (before payment)
 
 BOOKED_TICKETS = {}
- 
- 
+
+
 # -------------------------------
 
 # Pydantic Models
@@ -120,12 +171,10 @@ BOOKED_TICKETS = {}
 # -------------------------------
 
 class RouteRequest(BaseModel):
-
     route_id: int
- 
- 
-class SeatBookingRequest(BaseModel):
 
+
+class SeatBookingRequest(BaseModel):
     route_id: int
 
     date: str
@@ -139,10 +188,9 @@ class SeatBookingRequest(BaseModel):
     phone_number: str
 
     amount: float
- 
- 
-class PaymentRequest(BaseModel):
 
+
+class PaymentRequest(BaseModel):
     ticket_id: str
 
     card_number: str
@@ -152,8 +200,8 @@ class PaymentRequest(BaseModel):
     cvv: str
 
     card_holder: str
- 
- 
+
+
 # -------------------------------
 
 # API 1: Get Random Routes
@@ -161,20 +209,18 @@ class PaymentRequest(BaseModel):
 # -------------------------------
 
 @app.get("/routes/")
-
 def get_routes():
-
     # Pick 5 random routes
 
     random_routes = random.sample(ALL_ROUTES, 5)
- 
+
     # Convert into a single comma-separated string
 
     routes_str = ", ".join([f"{route['from']} to {route['to']}" for route in random_routes])
- 
+
     return {"available_routes": routes_str}
- 
- 
+
+
 # -------------------------------
 
 # API 2: Get Route Details (dates, buses, seats in one shot)
@@ -182,13 +228,10 @@ def get_routes():
 # -------------------------------
 
 @app.post("/route-details/")
-
 def route_details(req: RouteRequest):
-
     if req.route_id not in BUS_DATA:
-
         raise HTTPException(status_code=404, detail="Invalid route_id")
- 
+
     route_info = {}
 
     for bus_name, schedules in BUS_DATA[req.route_id].items():
@@ -196,13 +239,12 @@ def route_details(req: RouteRequest):
         route_info[bus_name] = {}
 
         for date, schedule in schedules.items():
-
             total = schedule["total_seats"]
 
             booked = schedule["booked_seats"]
 
             available = [s for s in range(1, total + 1) if s not in booked]
- 
+
             route_info[bus_name][date] = {
 
                 "total_seats": total,
@@ -212,7 +254,7 @@ def route_details(req: RouteRequest):
                 "available_seats": available
 
             }
- 
+
     return {
 
         "route_id": req.route_id,
@@ -220,8 +262,8 @@ def route_details(req: RouteRequest):
         "route_details": route_info
 
     }
- 
- 
+
+
 # -------------------------------
 
 # API 3: Book Seat (reserve seat, not yet paid)
@@ -229,35 +271,28 @@ def route_details(req: RouteRequest):
 # -------------------------------
 
 @app.post("/book-seat/")
-
 def book_seat(req: SeatBookingRequest):
-
     if req.route_id not in BUS_DATA:
-
         raise HTTPException(status_code=404, detail="Invalid route_id")
 
     if req.bus_name not in BUS_DATA[req.route_id]:
-
         raise HTTPException(status_code=404, detail="Bus not found on this route")
 
     if req.date not in BUS_DATA[req.route_id][req.bus_name]:
-
         raise HTTPException(status_code=404, detail="No schedule for this bus on given date")
- 
+
     schedule = BUS_DATA[req.route_id][req.bus_name][req.date]
- 
+
     if req.seat_number in schedule["booked_seats"]:
-
         raise HTTPException(status_code=400, detail="Seat already booked")
- 
-    if req.amount <= 0:
 
+    if req.amount <= 0:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid amount")
- 
+
     # Reserve seat
 
     schedule["booked_seats"].append(req.seat_number)
- 
+
     # Generate ticket (not paid yet)
 
     ticket_id = f"TKT{random.randint(1000, 9999)}"
@@ -281,7 +316,7 @@ def book_seat(req: SeatBookingRequest):
         "status": "Pending Payment"
 
     }
- 
+
     return {
 
         "message": "Seat reserved! Please proceed to payment.",
@@ -291,8 +326,8 @@ def book_seat(req: SeatBookingRequest):
         "amount_due": req.amount
 
     }
- 
- 
+
+
 # -------------------------------
 
 # API 4: Make Payment (dummy)
@@ -300,25 +335,20 @@ def book_seat(req: SeatBookingRequest):
 # -------------------------------
 
 @app.post("/make-payment/")
-
 def make_payment(req: PaymentRequest):
-
     if req.ticket_id not in BOOKED_TICKETS:
-
         raise HTTPException(status_code=404, detail="Invalid ticket_id")
- 
+
     ticket = BOOKED_TICKETS[req.ticket_id]
- 
+
     # Dummy card validation
 
     if len(req.card_number) != 16 or not req.card_number.isdigit():
-
         raise HTTPException(status_code=400, detail="Invalid card number")
 
     if len(req.cvv) != 3 or not req.cvv.isdigit():
-
         raise HTTPException(status_code=400, detail="Invalid CVV")
- 
+
     # Payment success (dummy)
 
     confirmation_number = random.randint(100000, 999999)
@@ -328,7 +358,7 @@ def make_payment(req: PaymentRequest):
     ticket["confirmation_number"] = confirmation_number
 
     ticket["card_holder"] = req.card_holder
- 
+
     return {
 
         "message": "Payment Successful!",
@@ -341,4 +371,3 @@ def make_payment(req: PaymentRequest):
 
     }
 
- 
