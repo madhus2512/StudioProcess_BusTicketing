@@ -5,7 +5,7 @@ import random
 app = FastAPI(title="Bus Ticket Booking API")
 
 # -------------------------------
-# Bus Operators and Routes
+# Master Data
 # -------------------------------
 BUS_ROUTES = {
     "Garuda": ["Hyd - Bangalore", "Bangalore - Chennai"],
@@ -14,10 +14,23 @@ BUS_ROUTES = {
     "AbhiBus": ["Chennai - Coimbatore", "Coimbatore - Trichy"]
 }
 
+# Temporary storage for bookings
+TEMP_BOOKED_SEATS = {}
+PASSENGER_BOOKINGS = {}
+CONFIRMED_TICKETS = {}
+
 
 # -------------------------------
 # Pydantic Models
 # -------------------------------
+class OperatorSelection(BaseModel):
+    operator_name: str
+
+
+class RouteSelection(BaseModel):
+    route_name: str
+
+
 class DateSelection(BaseModel):
     date: str
 
@@ -45,23 +58,39 @@ class PaymentInfo(BaseModel):
 
 
 # -------------------------------
-# Pre-selected Operator & Route
+# API 1: Get Bus Operators
 # -------------------------------
-PRE_SELECTED_OPERATOR = "Volvo"
-PRE_SELECTED_ROUTE = "Chennai - Mumbai"
-
-# Temporary storage
-TEMP_BOOKED_SEATS = {}
-PASSENGER_BOOKINGS = {}
-CONFIRMED_TICKETS = {}
+@app.get("/buses/")
+def get_buses():
+    return {"available_buses": list(BUS_ROUTES.keys())}
 
 
 # -------------------------------
-# API: Get Available Seats
+# API 2: Get Bus Routes for Operator
+# -------------------------------
+@app.post("/bus-routes/")
+def get_routes(op: OperatorSelection):
+    if op.operator_name not in BUS_ROUTES:
+        raise HTTPException(status_code=404, detail="Operator not found")
+    return {"operator": op.operator_name, "routes": BUS_ROUTES[op.operator_name]}
+
+
+# -------------------------------
+# API 3: Get Available Dates for Route
+# -------------------------------
+@app.post("/route-dates/")
+def get_dates(route: RouteSelection):
+    # Generate random future dates for demo
+    dates = [f"2025-09-{day:02d}" for day in random.sample(range(18, 28), 5)]
+    return {"route": route.route_name, "available_dates": dates}
+
+
+# -------------------------------
+# API 4: Get Available Seats
 # -------------------------------
 @app.post("/available-seats/")
 def get_seats(selection: DateSelection):
-    route_key = f"{PRE_SELECTED_ROUTE}_{selection.date}"
+    route_key = f"{selection.date}"
 
     if route_key not in TEMP_BOOKED_SEATS:
         total_seats = 40
@@ -71,45 +100,15 @@ def get_seats(selection: DateSelection):
         booked_seats = TEMP_BOOKED_SEATS[route_key]
 
     available_seats = [seat for seat in range(1, 41) if seat not in booked_seats]
-
-    return {
-        "operator": PRE_SELECTED_OPERATOR,
-        "route": PRE_SELECTED_ROUTE,
-        "date": selection.date,
-        "available_seats": available_seats
-    }
+    return {"date": selection.date, "available_seats": available_seats}
 
 
 # -------------------------------
-# API: Select Seat
-# -------------------------------
-@app.post("/select-seat/")
-def select_seat(selection: SeatSelection):
-    route_key = f"{PRE_SELECTED_ROUTE}_{selection.date}"
-
-    if route_key not in TEMP_BOOKED_SEATS:
-        raise HTTPException(status_code=400, detail="Check available seats first")
-
-    if selection.seat_number in TEMP_BOOKED_SEATS[route_key]:
-        raise HTTPException(status_code=400, detail="Seat already booked")
-
-    TEMP_BOOKED_SEATS[route_key].append(selection.seat_number)
-
-    return {
-        "message": f"Seat {selection.seat_number} successfully selected!",
-        "operator": PRE_SELECTED_OPERATOR,
-        "route": PRE_SELECTED_ROUTE,
-        "date": selection.date,
-        "selected_seat": selection.seat_number
-    }
-
-
-# -------------------------------
-# API: Add Passenger Info
+# API 5: Add Passenger Info
 # -------------------------------
 @app.post("/passenger-info/")
 def add_passenger(info: PassengerInfo):
-    route_key = f"{PRE_SELECTED_ROUTE}_{info.date}_{info.seat_number}"
+    route_key = f"{info.date}_{info.seat_number}"
 
     if route_key in PASSENGER_BOOKINGS:
         raise HTTPException(status_code=400, detail="Passenger info already added for this seat")
@@ -118,8 +117,6 @@ def add_passenger(info: PassengerInfo):
         "username": info.username,
         "phone_number": info.phone_number,
         "age": info.age,
-        "operator": PRE_SELECTED_OPERATOR,
-        "route": PRE_SELECTED_ROUTE,
         "seat_number": info.seat_number,
         "date": info.date
     }
@@ -131,22 +128,21 @@ def add_passenger(info: PassengerInfo):
 
 
 # -------------------------------
-# API: Make Payment and Generate Ticket
+# API 6: Make Payment and Generate Ticket
 # -------------------------------
 @app.post("/make-payment/")
 def make_payment(payment: PaymentInfo):
-    route_key = f"{PRE_SELECTED_ROUTE}_{payment.date}_{payment.seat_number}"
+    route_key = f"{payment.date}_{payment.seat_number}"
 
     if route_key not in PASSENGER_BOOKINGS:
         raise HTTPException(status_code=400, detail="Passenger info not added for this seat")
 
-    # Simulate card validation
+    # Simple card validation
     if len(payment.card_number) != 16 or not payment.card_number.isdigit():
         raise HTTPException(status_code=400, detail="Invalid card number")
     if len(payment.cvv) != 3 or not payment.cvv.isdigit():
         raise HTTPException(status_code=400, detail="Invalid CVV")
 
-    # Generate ticket ID
     ticket_id = f"TKT{random.randint(1000, 9999)}"
 
     CONFIRMED_TICKETS[ticket_id] = {
