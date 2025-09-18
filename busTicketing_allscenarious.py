@@ -68,12 +68,25 @@ def get_buses():
 # -------------------------------
 # API 2: Get Bus Routes for Operator
 # -------------------------------
+# @app.post("/bus-routes/")
+# def get_routes(op: OperatorSelection):
+#     if op.operator_name not in BUS_ROUTES:
+#         raise HTTPException(status_code=404, detail="Operator not found")
+#     return {"operator": op.operator_name, "routes": BUS_ROUTES[op.operator_name]}
+
 @app.post("/bus-routes/")
 def get_routes(op: OperatorSelection):
     if op.operator_name not in BUS_ROUTES:
-        raise HTTPException(status_code=404, detail="Operator not found")
-    return {"operator": op.operator_name, "routes": BUS_ROUTES[op.operator_name]}
-
+        return {
+            "operator": op.operator_name,
+            "routes": [],
+            "message": "No operator found"
+        }
+    return {
+        "operator": op.operator_name,
+        "routes": BUS_ROUTES[op.operator_name],
+        "message": "Operator found"
+    }
 
 # -------------------------------
 # API 3: Get Available Dates for Route
