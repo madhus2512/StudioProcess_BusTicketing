@@ -93,10 +93,10 @@ def get_routes(op: OperatorSelection):
 # -------------------------------
 @app.post("/route-dates/")
 def get_dates(route: RouteSelection):
-    # Generate random future dates for demo
-    dates = [f"2025-09-{day:02d}" for day in random.sample(range(18, 28), 5)]
+    today = datetime.today()
+    # Generate the next 5 days from today
+    dates = [(today + timedelta(days=i)).strftime("%Y-%m-%d") for i in range(1, 6)]
     return {"route": route.route_name, "available_dates": dates}
-
 
 # -------------------------------
 # API 4: Get Available Seats
@@ -113,7 +113,16 @@ def get_seats(selection: DateSelection):
         booked_seats = TEMP_BOOKED_SEATS[route_key]
 
     available_seats = [seat for seat in range(1, 41) if seat not in booked_seats]
-    return {"date": selection.date, "available_seats": available_seats}
+
+    # Show only first 10 available seats
+    limited_seats = available_seats[:10]
+
+    return {
+        "date": selection.date,
+        "available_seats": limited_seats,
+        "total_available": len(available_seats)
+    }
+
 
 
 # -------------------------------
