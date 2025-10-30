@@ -16,11 +16,10 @@ BUS_ROUTES = {
     "AbhiBus": ["Chennai - Coimbatore", "Coimbatore - Trichy"]
 }
 
-# Temporary storage for bookings
+# Temporary in-memory storage
 TEMP_BOOKED_SEATS = {}
 PASSENGER_BOOKINGS = {}
 CONFIRMED_TICKETS = {}
-
 
 # -------------------------------
 # Pydantic Models
@@ -53,11 +52,10 @@ class PassengerInfo(BaseModel):
 class PaymentInfo(BaseModel):
     date: str
     seat_number: int
-    card_number: str
-    cvv: str
+    card_number: str = Field(..., pattern=r"^\d{16}$")  # exactly 16 digits
+    cvv: str = Field(..., pattern=r"^\d{3}$")           # exactly 3 digits
     expiry_date: str
     card_holder: str
-
 
 # -------------------------------
 # API 1: Get Bus Operators
@@ -70,12 +68,6 @@ def get_buses():
 # -------------------------------
 # API 2: Get Bus Routes for Operator
 # -------------------------------
-# @app.post("/bus-routes/")
-# def get_routes(op: OperatorSelection):
-#     if op.operator_name not in BUS_ROUTES:
-#         raise HTTPException(status_code=404, detail="Operator not found")
-#     return {"operator": op.operator_name, "routes": BUS_ROUTES[op.operator_name]}
-
 @app.post("/bus-routes/")
 def get_routes(op: OperatorSelection):
     if op.operator_name not in BUS_ROUTES:
@@ -90,15 +82,17 @@ def get_routes(op: OperatorSelection):
         "message": "Operator found"
     }
 
+
 # -------------------------------
 # API 3: Get Available Dates for Route
 # -------------------------------
 @app.post("/route-dates/")
 def get_dates(route: RouteSelection):
     today = datetime.today()
-    # Generate the next 5 days from today
+    # Generate next 5 days
     dates = [(today + timedelta(days=i)).strftime("%Y-%m-%d") for i in range(1, 6)]
     return {"route": route.route_name, "available_dates": dates}
+
 
 # -------------------------------
 # API 4: Get Available Seats
@@ -115,9 +109,7 @@ def get_seats(selection: DateSelection):
         booked_seats = TEMP_BOOKED_SEATS[route_key]
 
     available_seats = [seat for seat in range(1, 41) if seat not in booked_seats]
-
-    # Show only first 10 available seats
-    limited_seats = available_seats[:10]
+    limited_seats = available_seats[:10]  # show only first 10
 
     return {
         "date": selection.date,
@@ -126,18 +118,15 @@ def get_seats(selection: DateSelection):
     }
 
 
-
 # -------------------------------
-# API 5: Add Passenger Info
+# API 5: Add Passenger Info (NO seat restriction)
 # -------------------------------
 @app.post("/passenger-info/")
 def add_passenger(info: PassengerInfo):
-    route_key = f"{info.date}_{info.seat_number}"
+    # Generate a unique key per passenger entry
+    booking_id = f"{info.date}_{info.seat_number}_{random.randint(1000,9999)}"
 
-    if route_key in PASSENGER_BOOKINGS:
-        raise HTTPException(status_code=400, detail="Passenger info already added for this seat")
-
-    PASSENGER_BOOKINGS[route_key] = {
+    PASSENGER_BOOKINGS[booking_id] = {
         "username": info.username,
         "phone_number": info.phone_number,
         "age": info.age,
@@ -146,8 +135,9 @@ def add_passenger(info: PassengerInfo):
     }
 
     return {
-        "message": "Passenger info successfully added!",
-        "booking_details": PASSENGER_BOOKINGS[route_key]
+        "message": "Passenger info successfully added (seat sharing allowed)!",
+        "booking_id": booking_id,
+        "booking_details": PASSENGER_BOOKINGS[booking_id]
     }
 
 
@@ -156,21 +146,21 @@ def add_passenger(info: PassengerInfo):
 # -------------------------------
 @app.post("/make-payment/")
 def make_payment(payment: PaymentInfo):
-    route_key = f"{payment.date}_{payment.seat_number}"
+    # Match payment to any booking with same date & seat
+    matching_booking = None
+    for booking_id, data in PASSENGER_BOOKINGS.items():
+        if data["date"] == payment.date and data["seat_number"] == payment.seat_number:
+            matching_booking = (booking_id, data)
+            break
 
-    if route_key not in PASSENGER_BOOKINGS:
-        raise HTTPException(status_code=400, detail="Passenger info not added for this seat")
+    if not matching_booking:
+        raise HTTPException(status_code=400, detail="No passenger info found for this seat and date")
 
-    # Simple card validation
-    if len(payment.card_number) != 16 or not payment.card_number.isdigit():
-        raise HTTPException(status_code=400, detail="Invalid card number")
-    if len(payment.cvv) != 3 or not payment.cvv.isdigit():
-        raise HTTPException(status_code=400, detail="Invalid CVV")
-
+    booking_id, passenger_data = matching_booking
     ticket_id = f"TKT{random.randint(1000, 9999)}"
 
     CONFIRMED_TICKETS[ticket_id] = {
-        **PASSENGER_BOOKINGS[route_key],
+        **passenger_data,
         "payment_status": "Paid",
         "card_holder": payment.card_holder,
         "ticket_id": ticket_id
@@ -180,3 +170,23 @@ def make_payment(payment: PaymentInfo):
         "message": "Payment successful! Ticket generated.",
         "ticket": CONFIRMED_TICKETS[ticket_id]
     }
+
+
+# -------------------------------
+# API 7: View All Confirmed Tickets
+# -------------------------------
+@app.get("/confirmed-tickets/")
+def get_confirmed_tickets():
+    if not CONFIRMED_TICKETS:
+        raise HTTPException(status_code=404, detail="No confirmed tickets found")
+    return {"confirmed_tickets": CONFIRMED_TICKETS}
+
+
+# -------------------------------
+# API 8: View All Passenger Bookings (Admin)
+# -------------------------------
+@app.get("/passenger-bookings/")
+def get_passenger_bookings():
+    if not PASSENGER_BOOKINGS:
+        raise HTTPException(status_code=404, detail="No passenger bookings found")
+    return {"passenger_bookings": PASSENGER_BOOKINGS}
