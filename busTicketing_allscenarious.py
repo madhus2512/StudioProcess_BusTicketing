@@ -3,8 +3,14 @@ from pydantic import BaseModel, Field
 import random
 from datetime import datetime, timedelta
 
-
 app = FastAPI(title="Bus Ticket Booking API")
+
+# -------------------------------
+# Root Endpoint (Handle `/` requests)
+# -------------------------------
+@app.get("/")
+def read_root():
+    return {"message": "Welcome to the Bus Ticket Booking API!"}
 
 # -------------------------------
 # Master Data
@@ -56,6 +62,7 @@ class PaymentInfo(BaseModel):
     cvv: str = Field(..., pattern=r"^\d{3}$")           # exactly 3 digits
     expiry_date: str
     card_holder: str
+
 
 # -------------------------------
 # API 1: Get Bus Operators
