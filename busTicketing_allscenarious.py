@@ -6,13 +6,6 @@ from datetime import datetime, timedelta
 app = FastAPI(title="Bus Ticket Booking API")
 
 # -------------------------------
-# Root Endpoint (Handle `/` requests)
-# -------------------------------
-@app.get("/")
-def read_root():
-    return {"message": "Welcome to the Bus Ticket Booking API!"}
-
-# -------------------------------
 # Master Data
 # -------------------------------
 BUS_ROUTES = {
@@ -22,7 +15,7 @@ BUS_ROUTES = {
     "AbhiBus": ["Chennai - Coimbatore", "Coimbatore - Trichy"]
 }
 
-# Temporary in-memory storage
+# Temporary storage for bookings
 TEMP_BOOKED_SEATS = {}
 PASSENGER_BOOKINGS = {}
 CONFIRMED_TICKETS = {}
@@ -30,22 +23,19 @@ CONFIRMED_TICKETS = {}
 # -------------------------------
 # Pydantic Models
 # -------------------------------
+
 class OperatorSelection(BaseModel):
     operator_name: str
-
 
 class RouteSelection(BaseModel):
     route_name: str
 
-
 class DateSelection(BaseModel):
     date: str
-
 
 class SeatSelection(BaseModel):
     date: str
     seat_number: int
-
 
 class PassengerInfo(BaseModel):
     date: str
@@ -54,15 +44,13 @@ class PassengerInfo(BaseModel):
     phone_number: str = Field(..., min_length=10, max_length=15)
     age: int = Field(..., gt=0)
 
-
 class PaymentInfo(BaseModel):
     date: str
     seat_number: int
-    card_number: str = Field(..., pattern=r"^\d{16}$")  # exactly 16 digits
-    cvv: str = Field(..., pattern=r"^\d{3}$")           # exactly 3 digits
+    card_number: str  # No regex, just a string
+    cvv: str          # No regex, just a string
     expiry_date: str
     card_holder: str
-
 
 # -------------------------------
 # API 1: Get Bus Operators
@@ -70,7 +58,6 @@ class PaymentInfo(BaseModel):
 @app.get("/buses/")
 def get_buses():
     return {"available_buses": list(BUS_ROUTES.keys())}
-
 
 # -------------------------------
 # API 2: Get Bus Routes for Operator
@@ -89,17 +76,15 @@ def get_routes(op: OperatorSelection):
         "message": "Operator found"
     }
 
-
 # -------------------------------
 # API 3: Get Available Dates for Route
 # -------------------------------
 @app.post("/route-dates/")
 def get_dates(route: RouteSelection):
     today = datetime.today()
-    # Generate next 5 days
+    # Generate the next 5 days from today
     dates = [(today + timedelta(days=i)).strftime("%Y-%m-%d") for i in range(1, 6)]
     return {"route": route.route_name, "available_dates": dates}
-
 
 # -------------------------------
 # API 4: Get Available Seats
@@ -116,7 +101,9 @@ def get_seats(selection: DateSelection):
         booked_seats = TEMP_BOOKED_SEATS[route_key]
 
     available_seats = [seat for seat in range(1, 41) if seat not in booked_seats]
-    limited_seats = available_seats[:10]  # show only first 10
+
+    # Show only first 10 available seats
+    limited_seats = available_seats[:10]
 
     return {
         "date": selection.date,
@@ -124,16 +111,17 @@ def get_seats(selection: DateSelection):
         "total_available": len(available_seats)
     }
 
-
 # -------------------------------
-# API 5: Add Passenger Info (NO seat restriction)
+# API 5: Add Passenger Info
 # -------------------------------
 @app.post("/passenger-info/")
 def add_passenger(info: PassengerInfo):
-    # Generate a unique key per passenger entry
-    booking_id = f"{info.date}_{info.seat_number}_{random.randint(1000,9999)}"
+    route_key = f"{info.date}_{info.seat_number}"
 
-    PASSENGER_BOOKINGS[booking_id] = {
+    if route_key in PASSENGER_BOOKINGS:
+        raise HTTPException(status_code=400, detail="Passenger info already added for this seat")
+
+    PASSENGER_BOOKINGS[route_key] = {
         "username": info.username,
         "phone_number": info.phone_number,
         "age": info.age,
@@ -142,32 +130,25 @@ def add_passenger(info: PassengerInfo):
     }
 
     return {
-        "message": "Passenger info successfully added (seat sharing allowed)!",
-        "booking_id": booking_id,
-        "booking_details": PASSENGER_BOOKINGS[booking_id]
+        "message": "Passenger info successfully added!",
+        "booking_details": PASSENGER_BOOKINGS[route_key]
     }
-
 
 # -------------------------------
 # API 6: Make Payment and Generate Ticket
 # -------------------------------
 @app.post("/make-payment/")
 def make_payment(payment: PaymentInfo):
-    # Match payment to any booking with same date & seat
-    matching_booking = None
-    for booking_id, data in PASSENGER_BOOKINGS.items():
-        if data["date"] == payment.date and data["seat_number"] == payment.seat_number:
-            matching_booking = (booking_id, data)
-            break
+    route_key = f"{payment.date}_{payment.seat_number}"
 
-    if not matching_booking:
-        raise HTTPException(status_code=400, detail="No passenger info found for this seat and date")
+    if route_key not in PASSENGER_BOOKINGS:
+        raise HTTPException(status_code=400, detail="Passenger info not added for this seat")
 
-    booking_id, passenger_data = matching_booking
+    # No validation for card number and CVV, user enters these manually.
     ticket_id = f"TKT{random.randint(1000, 9999)}"
 
     CONFIRMED_TICKETS[ticket_id] = {
-        **passenger_data,
+        **PASSENGER_BOOKINGS[route_key],
         "payment_status": "Paid",
         "card_holder": payment.card_holder,
         "ticket_id": ticket_id
@@ -178,22 +159,16 @@ def make_payment(payment: PaymentInfo):
         "ticket": CONFIRMED_TICKETS[ticket_id]
     }
 
-
 # -------------------------------
-# API 7: View All Confirmed Tickets
+# API 7: View All Confirmed Tickets (Admin Only)
 # -------------------------------
 @app.get("/confirmed-tickets/")
 def get_confirmed_tickets():
-    if not CONFIRMED_TICKETS:
-        raise HTTPException(status_code=404, detail="No confirmed tickets found")
     return {"confirmed_tickets": CONFIRMED_TICKETS}
 
-
 # -------------------------------
-# API 8: View All Passenger Bookings (Admin)
+# API 8: View All Passenger Bookings
 # -------------------------------
 @app.get("/passenger-bookings/")
 def get_passenger_bookings():
-    if not PASSENGER_BOOKINGS:
-        raise HTTPException(status_code=404, detail="No passenger bookings found")
     return {"passenger_bookings": PASSENGER_BOOKINGS}
