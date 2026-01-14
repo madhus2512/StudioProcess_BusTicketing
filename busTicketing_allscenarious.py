@@ -1,13 +1,13 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI
 from pydantic import BaseModel, Field
 import random
 from datetime import datetime, timedelta
 
 app = FastAPI(title="Bus Ticket Booking API")
 
-# -------------------------------
+# -------------------------------------------------
 # Master Data
-# -------------------------------
+# -------------------------------------------------
 BUS_ROUTES = {
     "Garuda": ["Hyd - Bangalore", "Bangalore - Chennai"],
     "Volvo": ["Chennai - Mumbai", "Mumbai - Pune"],
@@ -15,14 +15,13 @@ BUS_ROUTES = {
     "AbhiBus": ["Chennai - Coimbatore", "Coimbatore - Trichy"]
 }
 
-# Temporary storage for bookings
 TEMP_BOOKED_SEATS = {}
 PASSENGER_BOOKINGS = {}
 CONFIRMED_TICKETS = {}
 
-# -------------------------------
+# -------------------------------------------------
 # Pydantic Models
-# -------------------------------
+# -------------------------------------------------
 
 class OperatorSelection(BaseModel):
     operator_name: str
@@ -32,10 +31,6 @@ class RouteSelection(BaseModel):
 
 class DateSelection(BaseModel):
     date: str
-
-class SeatSelection(BaseModel):
-    date: str
-    seat_number: int
 
 class PassengerInfo(BaseModel):
     date: str
@@ -47,128 +42,146 @@ class PassengerInfo(BaseModel):
 class PaymentInfo(BaseModel):
     date: str
     seat_number: int
-    card_number: str  # No regex, just a string
-    cvv: str          # No regex, just a string
+    card_number: str
+    cvv: str
     expiry_date: str
     card_holder: str
 
-# -------------------------------
+class TicketRequest(BaseModel):
+    ticket_id: str
+
+# -------------------------------------------------
 # API 1: Get Bus Operators
-# -------------------------------
+# -------------------------------------------------
 @app.get("/buses/")
 def get_buses():
     return {"available_buses": list(BUS_ROUTES.keys())}
 
-# -------------------------------
-# API 2: Get Bus Routes for Operator
-# -------------------------------
+# -------------------------------------------------
+# API 2: Get Bus Routes
+# -------------------------------------------------
 @app.post("/bus-routes/")
 def get_routes(op: OperatorSelection):
     if op.operator_name not in BUS_ROUTES:
-        return {
-            "operator": op.operator_name,
-            "routes": [],
-            "message": "No operator found"
-        }
-    return {
-        "operator": op.operator_name,
-        "routes": BUS_ROUTES[op.operator_name],
-        "message": "Operator found"
-    }
+        return {"operator": op.operator_name, "routes": [], "message": "No operator found"}
 
-# -------------------------------
-# API 3: Get Available Dates for Route
-# -------------------------------
+    return {"operator": op.operator_name, "routes": BUS_ROUTES[op.operator_name], "message": "Operator found"}
+
+# -------------------------------------------------
+# API 3: Get Available Dates
+# -------------------------------------------------
 @app.post("/route-dates/")
 def get_dates(route: RouteSelection):
     today = datetime.today()
-    # Generate the next 5 days from today
     dates = [(today + timedelta(days=i)).strftime("%Y-%m-%d") for i in range(1, 6)]
     return {"route": route.route_name, "available_dates": dates}
 
-# -------------------------------
+# -------------------------------------------------
 # API 4: Get Available Seats
-# -------------------------------
+# -------------------------------------------------
 @app.post("/available-seats/")
 def get_seats(selection: DateSelection):
-    route_key = f"{selection.date}"
+    if selection.date not in TEMP_BOOKED_SEATS:
+        TEMP_BOOKED_SEATS[selection.date] = random.sample(range(1, 41), random.randint(0, 15))
 
-    if route_key not in TEMP_BOOKED_SEATS:
-        total_seats = 40
-        booked_seats = random.sample(range(1, total_seats + 1), k=random.randint(0, 15))
-        TEMP_BOOKED_SEATS[route_key] = booked_seats
-    else:
-        booked_seats = TEMP_BOOKED_SEATS[route_key]
-
-    available_seats = [seat for seat in range(1, 41) if seat not in booked_seats]
-
-    # Show only first 10 available seats
-    limited_seats = available_seats[:10]
+    booked = TEMP_BOOKED_SEATS[selection.date]
+    available = [s for s in range(1, 41) if s not in booked]
 
     return {
         "date": selection.date,
-        "available_seats": limited_seats,
-        "total_available": len(available_seats)
+        "available_seats": available[:10],
+        "total_available": len(available)
     }
 
-# -------------------------------
+# -------------------------------------------------
 # API 5: Add Passenger Info
-# -------------------------------
+# -------------------------------------------------
 @app.post("/passenger-info/")
 def add_passenger(info: PassengerInfo):
-    route_key = f"{info.date}_{info.seat_number}"
+    key = f"{info.date}_{info.seat_number}"
 
-    if route_key in PASSENGER_BOOKINGS:
-        raise HTTPException(status_code=400, detail="Passenger info already added for this seat")
+    if key in PASSENGER_BOOKINGS:
+        return {"message": "Passenger already exists", "booking_details": {}}
 
-    PASSENGER_BOOKINGS[route_key] = {
-        "username": info.username,
-        "phone_number": info.phone_number,
-        "age": info.age,
-        "seat_number": info.seat_number,
-        "date": info.date
-    }
+    PASSENGER_BOOKINGS[key] = info.dict()
+    return {"message": "Passenger info added", "booking_details": PASSENGER_BOOKINGS[key]}
 
-    return {
-        "message": "Passenger info successfully added!",
-        "booking_details": PASSENGER_BOOKINGS[route_key]
-    }
-
-# -------------------------------
-# API 6: Make Payment and Generate Ticket
-# -------------------------------
+# -------------------------------------------------
+# API 6: Make Payment & Generate Ticket
+# -------------------------------------------------
 @app.post("/make-payment/")
 def make_payment(payment: PaymentInfo):
-    route_key = f"{payment.date}_{payment.seat_number}"
+    key = f"{payment.date}_{payment.seat_number}"
 
-    if route_key not in PASSENGER_BOOKINGS:
-        raise HTTPException(status_code=400, detail="Passenger info not added for this seat")
+    if key not in PASSENGER_BOOKINGS:
+        return {"message": "Passenger info not found", "ticket": {}}
 
-    # No validation for card number and CVV, user enters these manually.
     ticket_id = f"TKT{random.randint(1000, 9999)}"
 
     CONFIRMED_TICKETS[ticket_id] = {
-        **PASSENGER_BOOKINGS[route_key],
+        **PASSENGER_BOOKINGS[key],
         "payment_status": "Paid",
         "card_holder": payment.card_holder,
         "ticket_id": ticket_id
     }
 
+    return {"message": "Payment successful", "ticket": CONFIRMED_TICKETS[ticket_id]}
+
+# =================================================
+# 🔹 Ticket ID Based POST APIs (200 OK Always)
+# =================================================
+
+# -------------------------------------------------
+# API 7: Get Ticket Details
+# -------------------------------------------------
+@app.post("/ticket/details")
+def get_ticket_details(req: TicketRequest):
+    ticket = CONFIRMED_TICKETS.get(req.ticket_id)
     return {
-        "message": "Payment successful! Ticket generated.",
-        "ticket": CONFIRMED_TICKETS[ticket_id]
+        "message": "Ticket found" if ticket else "Ticket not found",
+        "ticket_details": ticket or {}
     }
 
-# -------------------------------
-# API 7: View All Confirmed Tickets (Admin Only)
-# -------------------------------
-@app.get("/confirmed-tickets/")
-def get_confirmed_tickets():
-    return {"confirmed_tickets": CONFIRMED_TICKETS}
+# -------------------------------------------------
+# API 8: Get Passenger Details
+# -------------------------------------------------
+@app.post("/ticket/passenger")
+def get_passenger_details(req: TicketRequest):
+    ticket = CONFIRMED_TICKETS.get(req.ticket_id)
 
-# -------------------------------
-# API 8: View All Passenger Bookings
-# -------------------------------
-@app.get("/passenger-bookings/")
-def get_passenger_bookings():
-    return {"passenger_bookings": PASSENGER_BOOKINGS}
+    if not ticket:
+        return {"message": "Ticket not found", "passenger_details": {}}
+
+    passenger = {
+        "username": ticket["username"],
+        "phone_number": ticket["phone_number"],
+        "age": ticket["age"],
+        "seat_number": ticket["seat_number"],
+        "date": ticket["date"]
+    }
+
+    return {"message": "Passenger details found", "passenger_details": passenger}
+
+# -------------------------------------------------
+# API 9: Cancel Ticket
+# -------------------------------------------------
+@app.post("/ticket/cancel")
+def cancel_ticket(req: TicketRequest):
+    ticket = CONFIRMED_TICKETS.pop(req.ticket_id, None)
+
+    if not ticket:
+        return {
+            "message": "Ticket not found or already cancelled",
+            "ticket_id": req.ticket_id,
+            "cancelled": False
+        }
+
+    key = f"{ticket['date']}_{ticket['seat_number']}"
+    PASSENGER_BOOKINGS.pop(key, None)
+
+    return {
+        "message": "Ticket cancelled successfully",
+        "ticket_id": req.ticket_id,
+        "cancelled": True,
+        "refund_status": "Initiated"
+    }
